@@ -110,14 +110,24 @@ export function AuthProvider({ children }) {
     const userStatusRef = ref(db, `users/${uid}`);
     const connectedRef = ref(db, '.info/connected');
 
-    return onDisconnect(userStatusRef)
-      .update({ online: false, lastSeen: serverTimestamp() })
-      .then(() => {
-        // Only mark online AFTER the onDisconnect hook is registered, so
-        // there's never a window where the user is "online" server-side
-        // without a disconnect handler armed.
-        return update(userStatusRef, { online: true, lastSeen: serverTimestamp() });
-      });
+    // .info/connected fires every time this client's socket connects to
+    // Firebase's servers (initial load, and again after any reconnect).
+    // We re-arm onDisconnect on every reconnect, not just once at login,
+    // so presence stays accurate through network blips, sleep/wake, etc.
+    const unsubscribe = onValue(connectedRef, (snapshot) => {
+      if (snapshot.val() === false) return;
+
+      onDisconnect(userStatusRef)
+        .update({ online: false, lastSeen: serverTimestamp() })
+        .then(() => {
+          // Only mark online AFTER the onDisconnect hook is registered, so
+          // there's never a window where the user is "online" server-side
+          // without a disconnect handler armed.
+          update(userStatusRef, { online: true, lastSeen: serverTimestamp() });
+        });
+    });
+
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
