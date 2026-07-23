@@ -1,0 +1,1 @@
+import React from 'react'; import ChatList from '../components/chat/ChatList'; import ChatWindow from '../components/chat/ChatWindow'; export default function ChatsPage() { return ( <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}> <ChatList /> <ChatWindow /> </div> ); }
