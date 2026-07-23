@@ -1,12 +1,7 @@
 {
   "short_name": "WhatsApp",
-  "name": "WhatsApp Web & Mobile",
+  "name": "WhatsApp Mobile & Web",
   "icons": [
-    {
-      "src": "favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
-    },
     {
       "src": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/192px-WhatsApp.svg.png",
       "type": "image/png",
@@ -20,8 +15,9 @@
       "purpose": "any maskable"
     }
   ],
-  "start_url": ".",
+  "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "theme_color": "#111b21",
   "background_color": "#111b21"
 }
