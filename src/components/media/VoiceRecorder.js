@@ -12,7 +12,7 @@ function formatDuration(seconds) {
 
 export default function VoiceRecorder({ onClose }) {
   const { sendMediaMessage } = useChat();
-  const { upload, uploading, progress } = useMediaUpload();
+  const { upload, progress } = useMediaUpload();
 
   const [phase, setPhase] = useState('recording'); // 'recording' | 'preview' | 'sending'
   const [duration, setDuration] = useState(0);
