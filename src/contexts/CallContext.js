@@ -186,7 +186,7 @@ export function CallProvider({ children }) {
     });
 
     return unsubscribe;
-  }, [currentUser?.uid]);
+  }, [currentUser?.uid, resetToIdle]);
 
   const startCall = useCallback(
     async (targetUser, type) => {
