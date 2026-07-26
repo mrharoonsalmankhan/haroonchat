@@ -1,0 +1,79 @@
+/* src/components/media/VoiceRecorder.css */
+
+.voice-recorder-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: #0f1520;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  min-height: 62px;
+}
+
+.voice-recorder-bar.error {
+  color: #f87171;
+  font-size: 13.5px;
+  justify-content: space-between;
+}
+
+.voice-waveform {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 28px;
+  overflow: hidden;
+}
+
+.voice-bar {
+  width: 3px;
+  height: 10px;
+  background: #25d366;
+  border-radius: 2px;
+  animation: voice-bar-pulse 0.9s ease-in-out infinite;
+}
+
+.voice-bar.paused {
+  animation-play-state: paused;
+  opacity: 0.4;
+}
+
+@keyframes voice-bar-pulse {
+  0%, 100% { height: 8px; }
+  50% { height: 24px; }
+}
+
+.voice-duration {
+  color: #d5dbe3;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.recording-dot .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: dot-pulse 1s ease-in-out infinite;
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.voice-playback {
+  flex: 1;
+  height: 34px;
+}
+
+.voice-upload-progress {
+  color: #8b95a5;
+  font-size: 12.5px;
+  min-width: 36px;
+  text-align: center;
+}

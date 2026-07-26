@@ -1,0 +1,133 @@
+/* src/components/calls/CallScreen.css */
+
+.call-screen {
+  position: fixed;
+  inset: 0;
+  background: #0b0f17;
+  z-index: 1500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.call-remote-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+
+.call-center-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 2;
+}
+
+.call-avatar,
+.call-avatar-fallback {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  margin-bottom: 20px;
+}
+
+.call-avatar {
+  object-fit: cover;
+}
+
+.call-avatar-fallback {
+  background: #2a3444;
+  color: #d5dbe3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 42px;
+  font-weight: 600;
+}
+
+.call-center-info h2 {
+  margin: 0 0 8px;
+  color: #f2f5f8;
+  font-size: 24px;
+}
+
+.call-status-text {
+  margin: 0;
+  color: #8b95a5;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.call-duration-badge {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.5);
+  color: #f2f5f8;
+  padding: 6px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  z-index: 3;
+}
+
+.call-local-video {
+  position: absolute;
+  bottom: 110px;
+  right: 20px;
+  width: 110px;
+  height: 150px;
+  border-radius: 14px;
+  object-fit: cover;
+  background: #1c2431;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  z-index: 3;
+  transform: scaleX(-1);
+}
+
+.call-local-video.hidden {
+  visibility: hidden;
+}
+
+.call-controls {
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 22px;
+  z-index: 3;
+}
+
+.call-control-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #f2f5f8;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.call-control-btn:hover {
+  transform: scale(1.08);
+}
+
+.call-control-btn.active {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.call-control-btn.end-call {
+  background: #ef4444;
+}

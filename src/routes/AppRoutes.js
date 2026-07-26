@@ -5,10 +5,9 @@ import { useAuth } from '../contexts/AuthContext';
 import ProtectedRoute from './ProtectedRoute';
 import LoginPage from '../pages/LoginPage';
 import ChatsPage from '../pages/ChatsPage';
+import SettingsPage from '../pages/SettingsPage';
 
 function PublicOnlyRoute({ children }) {
-  // If an already-logged-in user manually navigates to /login, bounce them
-  // straight to the app instead of showing the sign-in screen again.
   const { isAuthenticated, loading } = useAuth();
   if (loading) return null;
   if (isAuthenticated) return <Navigate to="/" replace />;
@@ -24,6 +23,14 @@ export default function AppRoutes() {
           <PublicOnlyRoute>
             <LoginPage />
           </PublicOnlyRoute>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <SettingsPage />
+          </ProtectedRoute>
         }
       />
       <Route

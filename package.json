@@ -5,27 +5,27 @@
   "description": "Real-time messaging platform with voice/video calling, media sharing, and PWA support",
   "homepage": ".",
   "dependencies": {
+    "browser-image-compression": "^2.0.2",
+    "date-fns": "^3.6.0",
+    "dompurify": "^3.1.6",
+    "emoji-picker-react": "^4.11.1",
+    "firebase": "^10.13.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.1",
-    "firebase": "^10.13.1",
-    "browser-image-compression": "^2.0.2",
     "react-easy-crop": "^5.0.8",
-    "emoji-picker-react": "^4.11.1",
+    "react-router-dom": "^6.26.1",
     "react-window": "^1.8.10",
     "react-window-infinite-loader": "^1.0.9",
-    "dompurify": "^3.1.6",
-    "date-fns": "^3.6.0",
     "uuid": "^10.0.0",
     "web-vitals": "^4.2.3",
     "workbox-window": "^7.1.0"
   },
   "devDependencies": {
-    "react-scripts": "5.0.1",
-    "workbox-webpack-plugin": "^7.1.0",
     "eslint": "^8.57.0",
     "eslint-config-react-app": "^7.0.1",
-    "prettier": "^3.3.3"
+    "prettier": "^3.3.3",
+    "react-scripts": "5.0.1",
+    "workbox-webpack-plugin": "^7.1.0"
   },
   "scripts": {
     "start": "react-scripts start",
