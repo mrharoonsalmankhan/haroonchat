@@ -20,7 +20,7 @@ export function createCallId() {
   return push(ref(db, 'calls')).key;
 }
 
-export async function initiateCall(callId, { callerId, callerName, callerPhoto, calleeId, calleeName, calleePhoto, type }) {
+export async function createCallRecord(callId, { callerId, callerName, calleeId, calleeName, type }) {
   const now = serverTimestamp();
   await set(ref(db, `calls/${callId}`), {
     callerId,
@@ -31,6 +31,10 @@ export async function initiateCall(callId, { callerId, callerName, callerPhoto, 
     status: 'ringing',
     startedAt: now,
   });
+}
+
+export async function sendCallInvite(callId, calleeId, { callerId, callerName, callerPhoto, type }) {
+  const now = serverTimestamp();
   await set(ref(db, `callInvites/${calleeId}/${callId}`), {
     callId,
     callerId,

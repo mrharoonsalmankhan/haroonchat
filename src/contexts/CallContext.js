@@ -3,7 +3,8 @@ import React, { createContext, useContext, useEffect, useRef, useState, useCallb
 import { useAuth } from './AuthContext';
 import {
   createCallId,
-  initiateCall,
+  createCallRecord,
+  sendCallInvite,
   subscribeToIncomingCalls,
   subscribeToCallStatus,
   acceptCall as acceptCallService,
@@ -33,10 +34,9 @@ const CallContext = createContext(undefined);
 export function CallProvider({ children }) {
   const { currentUser, userProfile } = useAuth();
 
-  // 'idle' | 'outgoing-ringing' | 'incoming-ringing' | 'connected' | 'ended'
   const [callState, setCallState] = useState('idle');
-  const [callType, setCallType] = useState(null); // 'voice' | 'video'
-  const [otherUser, setOtherUser] = useState(null); // { uid, displayName, photoURL }
+  const [callType, setCallType] = useState(null);
+  const [otherUser, setOtherUser] = useState(null);
   const [incomingCall, setIncomingCall] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
@@ -46,7 +46,7 @@ export function CallProvider({ children }) {
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(new MediaStream());
   const callIdRef = useRef(null);
-  const roleRef = useRef(null); // 'caller' | 'callee'
+  const roleRef = useRef(null);
   const unsubscribersRef = useRef([]);
   const ringTimeoutRef = useRef(null);
   const durationIntervalRef = useRef(null);
@@ -65,8 +65,6 @@ export function CallProvider({ children }) {
 
   const resetToIdle = useCallback(() => {
     if (callStateRef.current === 'idle' && !callIdRef.current) {
-      // Already reset — avoid redundant work/re-renders when multiple
-      // listeners react to the same call-ending event.
       return;
     }
     // eslint-disable-next-line no-console
@@ -145,27 +143,12 @@ export function CallProvider({ children }) {
     [callState, otherUser, doLogHistory, resetToIdle]
   );
 
-  // Global listener for incoming calls — active any time the user is logged in.
-  // IMPORTANT: this subscribes ONCE per login (deliberately not re-run when
-  // callState changes) — re-subscribing on every state change was causing
-  // Firebase to immediately re-deliver the current invite to the fresh
-  // listener, which the old code (reading callState from a stale closure)
-  // misread as "a second incoming call while already busy" and auto-rejected
-  // its own call. We read live call state via a ref instead.
   useEffect(() => {
     if (!currentUser?.uid) return undefined;
 
     const unsubscribe = subscribeToIncomingCalls(currentUser.uid, (invite) => {
       if (!invite) {
         if (callStateRef.current === 'incoming-ringing') {
-          // The invite disappeared while we were still ringing — the caller
-          // cancelled, the call timed out as missed, or it was auto-declined
-          // elsewhere. Either way we never got an explicit accept/reject, so
-          // nothing else will ever bring callState back to idle unless we do
-          // it here. This was the actual bug: without this branch, the state
-          // machine got permanently stuck at 'incoming-ringing' the first
-          // time a call went unanswered, silently auto-declining every call
-          // after that as "busy".
           resetToIdle();
         } else {
           setIncomingCall((prev) => (prev ? null : prev));
@@ -173,7 +156,6 @@ export function CallProvider({ children }) {
         return;
       }
       if (callStateRef.current !== 'idle') {
-        // Already busy — auto-decline as busy without showing UI.
         // eslint-disable-next-line no-console
         console.warn('[CallContext] Auto-declining as busy. Current callStateRef:', callStateRef.current, 'invite:', invite.callId);
         markBusy(invite.callId, currentUser.uid).catch(() => {});
@@ -209,16 +191,20 @@ export function CallProvider({ children }) {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
-        await initiateCall(callId, {
+        await createCallRecord(callId, {
           callerId: currentUser.uid,
           callerName: userProfile?.displayName,
-          callerPhoto: userProfile?.photoURL,
           calleeId: targetUser.uid,
           calleeName: targetUser.displayName,
-          calleePhoto: targetUser.photoURL,
           type,
         });
         await writeOffer(callId, offer);
+        await sendCallInvite(callId, targetUser.uid, {
+          callerId: currentUser.uid,
+          callerName: userProfile?.displayName,
+          callerPhoto: userProfile?.photoURL,
+          type,
+        });
 
         const unsubAnswer = subscribeToAnswer(callId, async (answer) => {
           if (answer && pc.currentRemoteDescription === null) {
@@ -272,7 +258,11 @@ export function CallProvider({ children }) {
       pcRef.current = pc;
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
-      const offer = await getOffer(callId);
+      let offer = await getOffer(callId);
+      for (let attempt = 0; !offer && attempt < 5; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        offer = await getOffer(callId);
+      }
       if (!offer) throw new Error('Offer not found');
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
