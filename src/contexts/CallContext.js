@@ -29,15 +29,40 @@ const ICE_SERVERS = {
 
 const RING_TIMEOUT_MS = 45000;
 
+// ICE candidates must not be added before the remote description is set, or
+// the browser silently rejects them — permanently losing that connection
+// path. Buffer anything that arrives too early and flush it once the remote
+// description is actually in place.
+function queueOrAddCandidate(pc, candidate, bufferRef) {
+  if (pc.remoteDescription && pc.remoteDescription.type) {
+    pc.addIceCandidate(new RTCIceCandidate(candidate)).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error('[CallContext] Failed to add ICE candidate:', err);
+    });
+  } else {
+    bufferRef.current.push(candidate);
+  }
+}
+
+function flushCandidateBuffer(pc, bufferRef) {
+  const queued = bufferRef.current;
+  bufferRef.current = [];
+  queued.forEach((candidate) => {
+    pc.addIceCandidate(new RTCIceCandidate(candidate)).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error('[CallContext] Failed to add buffered ICE candidate:', err);
+    });
+  });
+}
+
 const CallContext = createContext(undefined);
 
 export function CallProvider({ children }) {
   const { currentUser, userProfile } = useAuth();
 
-  // 'idle' | 'outgoing-ringing' | 'incoming-ringing' | 'connected' | 'ended'
   const [callState, setCallState] = useState('idle');
-  const [callType, setCallType] = useState(null); // 'voice' | 'video'
-  const [otherUser, setOtherUser] = useState(null); // { uid, displayName, photoURL }
+  const [callType, setCallType] = useState(null);
+  const [otherUser, setOtherUser] = useState(null);
   const [incomingCall, setIncomingCall] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
@@ -47,13 +72,14 @@ export function CallProvider({ children }) {
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(new MediaStream());
   const callIdRef = useRef(null);
-  const roleRef = useRef(null); // 'caller' | 'callee'
+  const roleRef = useRef(null);
   const unsubscribersRef = useRef([]);
   const ringTimeoutRef = useRef(null);
   const durationIntervalRef = useRef(null);
   const historyLoggedRef = useRef(false);
   const connectStartRef = useRef(null);
   const callStateRef = useRef('idle');
+  const pendingCandidatesRef = useRef([]);
 
   useEffect(() => {
     callStateRef.current = callState;
@@ -66,8 +92,6 @@ export function CallProvider({ children }) {
 
   const resetToIdle = useCallback(() => {
     if (callStateRef.current === 'idle' && !callIdRef.current) {
-      // Already reset — avoid redundant work/re-renders when multiple
-      // listeners react to the same call-ending event.
       return;
     }
     // eslint-disable-next-line no-console
@@ -84,6 +108,7 @@ export function CallProvider({ children }) {
       localStreamRef.current = null;
     }
     remoteStreamRef.current.getTracks().forEach((t) => remoteStreamRef.current.removeTrack(t));
+    pendingCandidatesRef.current = [];
     callIdRef.current = null;
     roleRef.current = null;
     historyLoggedRef.current = false;
@@ -103,6 +128,14 @@ export function CallProvider({ children }) {
     };
     pc.ontrack = (e) => {
       remoteStreamRef.current.addTrack(e.track);
+    };
+    pc.oniceconnectionstatechange = () => {
+      // eslint-disable-next-line no-console
+      console.warn(`[CallContext][${role}] ICE connection state:`, pc.iceConnectionState);
+    };
+    pc.onconnectionstatechange = () => {
+      // eslint-disable-next-line no-console
+      console.warn(`[CallContext][${role}] Peer connection state:`, pc.connectionState);
     };
     return pc;
   }, []);
@@ -146,7 +179,6 @@ export function CallProvider({ children }) {
     [callState, otherUser, doLogHistory, resetToIdle]
   );
 
-  // Global listener for incoming calls — active any time the user is logged in.
   useEffect(() => {
     if (!currentUser?.uid) return undefined;
 
@@ -192,17 +224,6 @@ export function CallProvider({ children }) {
         pcRef.current = pc;
         stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
-        // CRITICAL ORDERING: create the call record BEFORE calling
-        // setLocalDescription. RTCPeerConnection starts firing onicecandidate
-        // events asynchronously the instant a local description is set —
-        // often within milliseconds on a fast/local network, faster than the
-        // sequence of Firebase writes below could otherwise complete. Since
-        // the security rules require calls/{callId} to already exist before
-        // any ICE candidate can be written to callSignaling, doing this in
-        // the wrong order silently dropped the earliest (and most important
-        // — usually the fast local-network "host") candidates every time,
-        // which is exactly what was causing total media failure even on the
-        // same WiFi network.
         await createCallRecord(callId, {
           callerId: currentUser.uid,
           callerName: userProfile?.displayName,
@@ -212,7 +233,7 @@ export function CallProvider({ children }) {
         });
 
         const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer); // ICE gathering begins here — calls/{callId} already exists, so it's safe now
+        await pc.setLocalDescription(offer);
 
         await writeOffer(callId, offer);
         await sendCallInvite(callId, targetUser.uid, {
@@ -225,6 +246,7 @@ export function CallProvider({ children }) {
         const unsubAnswer = subscribeToAnswer(callId, async (answer) => {
           if (answer && pc.currentRemoteDescription === null) {
             await pc.setRemoteDescription(new RTCSessionDescription(answer));
+            flushCandidateBuffer(pc, pendingCandidatesRef);
             clearTimeout(ringTimeoutRef.current);
             connectStartRef.current = Date.now();
             setCallState('connected');
@@ -234,7 +256,7 @@ export function CallProvider({ children }) {
           }
         });
         const unsubIce = subscribeToNewIceCandidates(callId, 'callee', (candidate) => {
-          pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
+          queueOrAddCandidate(pc, candidate, pendingCandidatesRef);
         });
         const unsubStatus = subscribeToCallStatus(callId, (status) => {
           if (['rejected', 'busy', 'missed', 'ended', 'cancelled'].includes(status)) {
@@ -274,9 +296,6 @@ export function CallProvider({ children }) {
       pcRef.current = pc;
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
-      // Defense-in-depth: even with the ordering fix above, retry briefly
-      // in case of any network propagation delay, instead of failing
-      // immediately on the first empty read.
       let offer = await getOffer(callId);
       for (let attempt = 0; !offer && attempt < 5; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 300));
@@ -284,6 +303,7 @@ export function CallProvider({ children }) {
       }
       if (!offer) throw new Error('Offer not found');
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      flushCandidateBuffer(pc, pendingCandidatesRef);
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
@@ -291,7 +311,7 @@ export function CallProvider({ children }) {
       await acceptCallService(callId, currentUser.uid);
 
       const unsubIce = subscribeToNewIceCandidates(callId, 'caller', (candidate) => {
-        pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
+        queueOrAddCandidate(pc, candidate, pendingCandidatesRef);
       });
       const unsubStatus = subscribeToCallStatus(callId, (status) => {
         if (status === 'ended' || status === 'cancelled') {
