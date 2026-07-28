@@ -34,9 +34,10 @@ const CallContext = createContext(undefined);
 export function CallProvider({ children }) {
   const { currentUser, userProfile } = useAuth();
 
+  // 'idle' | 'outgoing-ringing' | 'incoming-ringing' | 'connected' | 'ended'
   const [callState, setCallState] = useState('idle');
-  const [callType, setCallType] = useState(null);
-  const [otherUser, setOtherUser] = useState(null);
+  const [callType, setCallType] = useState(null); // 'voice' | 'video'
+  const [otherUser, setOtherUser] = useState(null); // { uid, displayName, photoURL }
   const [incomingCall, setIncomingCall] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
@@ -46,7 +47,7 @@ export function CallProvider({ children }) {
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(new MediaStream());
   const callIdRef = useRef(null);
-  const roleRef = useRef(null);
+  const roleRef = useRef(null); // 'caller' | 'callee'
   const unsubscribersRef = useRef([]);
   const ringTimeoutRef = useRef(null);
   const durationIntervalRef = useRef(null);
@@ -65,6 +66,8 @@ export function CallProvider({ children }) {
 
   const resetToIdle = useCallback(() => {
     if (callStateRef.current === 'idle' && !callIdRef.current) {
+      // Already reset — avoid redundant work/re-renders when multiple
+      // listeners react to the same call-ending event.
       return;
     }
     // eslint-disable-next-line no-console
@@ -143,12 +146,27 @@ export function CallProvider({ children }) {
     [callState, otherUser, doLogHistory, resetToIdle]
   );
 
+  // Global listener for incoming calls — active any time the user is logged in.
+  // IMPORTANT: this subscribes ONCE per login (deliberately not re-run when
+  // callState changes) — re-subscribing on every state change was causing
+  // Firebase to immediately re-deliver the current invite to the fresh
+  // listener, which the old code (reading callState from a stale closure)
+  // misread as "a second incoming call while already busy" and auto-rejected
+  // its own call. We read live call state via a ref instead.
   useEffect(() => {
     if (!currentUser?.uid) return undefined;
 
     const unsubscribe = subscribeToIncomingCalls(currentUser.uid, (invite) => {
       if (!invite) {
         if (callStateRef.current === 'incoming-ringing') {
+          // The invite disappeared while we were still ringing — the caller
+          // cancelled, the call timed out as missed, or it was auto-declined
+          // elsewhere. Either way we never got an explicit accept/reject, so
+          // nothing else will ever bring callState back to idle unless we do
+          // it here. This was the actual bug: without this branch, the state
+          // machine got permanently stuck at 'incoming-ringing' the first
+          // time a call went unanswered, silently auto-declining every call
+          // after that as "busy".
           resetToIdle();
         } else {
           setIncomingCall((prev) => (prev ? null : prev));
@@ -156,6 +174,7 @@ export function CallProvider({ children }) {
         return;
       }
       if (callStateRef.current !== 'idle') {
+        // Already busy — auto-decline as busy without showing UI.
         // eslint-disable-next-line no-console
         console.warn('[CallContext] Auto-declining as busy. Current callStateRef:', callStateRef.current, 'invite:', invite.callId);
         markBusy(invite.callId, currentUser.uid).catch(() => {});
@@ -188,9 +207,17 @@ export function CallProvider({ children }) {
         pcRef.current = pc;
         stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-
+        // CRITICAL ORDERING: create the call record BEFORE calling
+        // setLocalDescription. RTCPeerConnection starts firing onicecandidate
+        // events asynchronously the instant a local description is set —
+        // often within milliseconds on a fast/local network, faster than the
+        // sequence of Firebase writes below could otherwise complete. Since
+        // the security rules require calls/{callId} to already exist before
+        // any ICE candidate can be written to callSignaling, doing this in
+        // the wrong order silently dropped the earliest (and most important
+        // — usually the fast local-network "host") candidates every time,
+        // which is exactly what was causing total media failure even on the
+        // same WiFi network.
         await createCallRecord(callId, {
           callerId: currentUser.uid,
           callerName: userProfile?.displayName,
@@ -198,6 +225,10 @@ export function CallProvider({ children }) {
           calleeName: targetUser.displayName,
           type,
         });
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer); // ICE gathering begins here — calls/{callId} already exists, so it's safe now
+
         await writeOffer(callId, offer);
         await sendCallInvite(callId, targetUser.uid, {
           callerId: currentUser.uid,
@@ -258,6 +289,9 @@ export function CallProvider({ children }) {
       pcRef.current = pc;
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
+      // Defense-in-depth: even with the ordering fix above, retry briefly
+      // in case of any network propagation delay, instead of failing
+      // immediately on the first empty read.
       let offer = await getOffer(callId);
       for (let attempt = 0; !offer && attempt < 5; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 300));
