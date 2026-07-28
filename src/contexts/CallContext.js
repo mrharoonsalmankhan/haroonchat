@@ -147,26 +147,12 @@ export function CallProvider({ children }) {
   );
 
   // Global listener for incoming calls — active any time the user is logged in.
-  // IMPORTANT: this subscribes ONCE per login (deliberately not re-run when
-  // callState changes) — re-subscribing on every state change was causing
-  // Firebase to immediately re-deliver the current invite to the fresh
-  // listener, which the old code (reading callState from a stale closure)
-  // misread as "a second incoming call while already busy" and auto-rejected
-  // its own call. We read live call state via a ref instead.
   useEffect(() => {
     if (!currentUser?.uid) return undefined;
 
     const unsubscribe = subscribeToIncomingCalls(currentUser.uid, (invite) => {
       if (!invite) {
         if (callStateRef.current === 'incoming-ringing') {
-          // The invite disappeared while we were still ringing — the caller
-          // cancelled, the call timed out as missed, or it was auto-declined
-          // elsewhere. Either way we never got an explicit accept/reject, so
-          // nothing else will ever bring callState back to idle unless we do
-          // it here. This was the actual bug: without this branch, the state
-          // machine got permanently stuck at 'incoming-ringing' the first
-          // time a call went unanswered, silently auto-declining every call
-          // after that as "busy".
           resetToIdle();
         } else {
           setIncomingCall((prev) => (prev ? null : prev));
@@ -174,7 +160,6 @@ export function CallProvider({ children }) {
         return;
       }
       if (callStateRef.current !== 'idle') {
-        // Already busy — auto-decline as busy without showing UI.
         // eslint-disable-next-line no-console
         console.warn('[CallContext] Auto-declining as busy. Current callStateRef:', callStateRef.current, 'invite:', invite.callId);
         markBusy(invite.callId, currentUser.uid).catch(() => {});
